@@ -1,0 +1,89 @@
+<%@ page import="java.io.*" %>
+<%@ page import="java.util.*" %>
+<%
+    // Ambil parameter dari request
+    String projectId = request.getParameter("projectId");
+    String engineType = request.getParameter("engineType");
+    String outputName = request.getParameter("outputName");
+
+    // Ambil user login dari session
+    String username = (String) session.getAttribute("SSC_USERNAME");
+    String password = (String) session.getAttribute("SSC_PASSWORD");
+
+    // Validasi input
+    if (projectId == null || projectId.isEmpty() ||
+        engineType == null || engineType.isEmpty() ||
+        outputName == null || outputName.isEmpty()) {
+        response.sendError(400, "Parameter tidak lengkap (projectId, engineType, outputName).");
+        return;
+    }
+
+    // Tentukan path hasil laporan
+    String outputPath = "/opt/tomcat9.0.105/webapps/fortify-report/reports/" + outputName;
+
+    // Bangun command CLI (tanpa bash shell untuk keamanan)
+    List<String> command = new ArrayList<>();
+    command.add("python3");
+    command.add("/opt/tomcat9.0.105/webapps/fortify-report/python/ssc_export_cli.py");
+    command.add("--user");
+    command.add(username);
+    command.add("--pass");
+    command.add(password);
+    command.add("--project-version");
+    command.add(projectId);
+    command.add("--engine-type");
+    command.add(engineType);
+    command.add("--output");
+    command.add(outputPath);
+    command.add("--insecure");
+
+    ProcessBuilder pb = new ProcessBuilder(command);
+    pb.redirectErrorStream(true);
+
+    try {
+        // Jalankan proses CLI
+        Process proc = pb.start();
+
+        BufferedReader reader = new BufferedReader(new InputStreamReader(proc.getInputStream()));
+        String line;
+        System.out.println("===== [Fortify CLI Execution Start] =====");
+        while ((line = reader.readLine()) != null) {
+            System.out.println("[CLI] " + line);
+        }
+        System.out.println("===== [Fortify CLI Execution End] =====");
+
+        int exitCode = proc.waitFor();
+        if (exitCode != 0) {
+            response.sendError(500, "Gagal menjalankan CLI (exit code: " + exitCode + ")");
+            return;
+        }
+
+        // Pastikan file hasil ada
+        File file = new File(outputPath);
+        if (!file.exists()) {
+            response.sendError(500, "File laporan tidak ditemukan setelah CLI dijalankan.");
+            return;
+        }
+
+        // Siapkan response untuk download file Excel
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setHeader("Content-Disposition", "attachment; filename=\"" + file.getName() + "\"");
+
+        try (FileInputStream fis = new FileInputStream(file);
+             OutputStream os = response.getOutputStream()) {
+            byte[] buffer = new byte[4096];
+            int bytesRead;
+            while ((bytesRead = fis.read(buffer)) != -1) {
+                os.write(buffer, 0, bytesRead);
+            }
+            os.flush();
+        }
+
+        // Opsional: hapus file setelah dikirim
+        // file.delete();
+
+    } catch (Exception e) {
+        e.printStackTrace();
+        response.sendError(500, "Terjadi error saat menjalankan CLI: " + e.getMessage());
+    }
+%>

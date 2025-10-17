@@ -1,0 +1,96 @@
+<%@ page import="java.io.*, java.net.*, org.json.*" %>
+<%
+    String token = (String) session.getAttribute("SSC_TOKEN");
+    String baseUrl = (String) session.getAttribute("SSC_BASE_URL");
+    if (token == null) {
+        response.sendRedirect("login.jsp");
+        return;
+    }
+%>
+<html>
+<head>
+<title>Generate Fortify Report</title>
+<style>
+body { font-family: Arial; margin: 40px; }
+select, input { padding: 8px; margin: 8px; width: 280px; }
+button { padding: 10px 20px; cursor: pointer; }
+#progressBox { display:none; margin-top:20px; }
+.progress-bar {
+  width: 0%; height: 20px; background: green; text-align: center; color: white;
+}
+</style>
+<script>
+function startGenerate(e){
+  e.preventDefault();
+  document.getElementById('progressBox').style.display = 'block';
+  document.getElementById('progressBar').style.width = '10%';
+  const form = e.target;
+  const data = new FormData(form);
+  fetch('downloadReport.jsp', {
+    method: 'POST',
+    body: data
+  })
+  .then(res => res.blob())
+  .then(blob => {
+    document.getElementById('progressBar').style.width = '100%';
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = form.outputName.value;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    document.getElementById('progressBox').style.display = 'none';
+  })
+  .catch(err => alert('❌ Gagal generate: ' + err));
+}
+</script>
+</head>
+<body>
+<h2>📊 Generate Fortify SSC Report</h2>
+<form id="generateForm" onsubmit="startGenerate(event)">
+  <label>Project Version:</label><br>
+  <select name="projectId" required>
+    <option value="">-- pilih project version --</option>
+    <%
+      try {
+          URL url = new URL(baseUrl + "/api/v1/projectVersions?limit=1000");
+          HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+          conn.setRequestProperty("Authorization", "FortifyToken " + token);
+          conn.setRequestProperty("Accept", "application/json");
+          InputStream in = conn.getInputStream();
+          String jsonText = new BufferedReader(new InputStreamReader(in)).lines().reduce("", (a,b) -> a+b);
+          JSONObject json = new JSONObject(jsonText);
+          JSONArray arr = json.getJSONArray("data");
+
+          for (int i = 0; i < arr.length(); i++) {
+              JSONObject obj = arr.getJSONObject(i);
+              JSONObject proj = obj.getJSONObject("project");
+              String name = proj.getString("name") + " - " + obj.getString("name");
+              int id = obj.getInt("id");
+    %>
+              <option value="<%= id %>"><%= name %></option>
+    <%
+          }
+      } catch (Exception e) {
+          out.println("<option disabled>Error loading projects</option>");
+      }
+    %>
+  </select><br>
+
+  <label>Engine Type:</label><br>
+  <input type="text" name="engineType" value="sca,webinspect"><br>
+
+  <label>Output Filename:</label><br>
+  <input type="text" name="outputName" value="Fortify_Report.xlsx" required><br>
+
+  <button type="submit">Generate & Download</button>
+</form>
+
+<div id="progressBox">
+  <p>Generating report...</p>
+  <div class="progress-bar" id="progressBar"></div>
+</div>
+
+</body>
+</html>
