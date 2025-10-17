@@ -71,7 +71,7 @@ footer {
 
 <form method="POST">
     <label>Base URL (SSC)</label>
-    <input type="text" name="baseUrl" value="https://ssc-adele.telkomsel.co.id:8443/ssc" required>
+    <input type="text" name="baseUrl" value="your SSC Fortify url" required>
 
     <label>Username</label>
     <input type="text" name="username" required>
